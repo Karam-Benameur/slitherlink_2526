@@ -2,6 +2,7 @@ library(shiny)
 library(Rcpp)
 # On importe notre script annexe qui contient la logique de création de la grille
 source("R/generate.R")
+source("R/utils.R")
 
 # ==========================================
 # ui : la fonction qui gère l'interface utilisateur
@@ -14,6 +15,8 @@ ui=fluidPage(
                  selectInput("difficulty","Difficulté",
                              choices=c("Facile (5x5)"="facile","Moyen (7x7)"="moyen","Difficile (10x10)"="difficile")),
                  actionButton("new_game","Nouvelle Partie",style="width:100%; font-weight:bold;"),
+                 hr(),
+                 actionButton("hint_btn","Indice",style="width:100%;"),
                  hr(),
                  helpText("Cliquez sur les arêtes entre les points pour tracer la boucle.")
     ),
@@ -54,6 +57,28 @@ server=function(input,output,session){
   
   # Si l'utilisateur clique sur le bouton "Nouvelle partie", on relance start_game()
   observeEvent(input$new_game,{start_game(input$difficulty)})
+  
+  # Gestion du bouton indice
+  # On cherche une arête incorrecte ou manquante et on la corrige pour aider le joueur
+  observeEvent(input$hint_btn,{
+    if(is.null(game$puzzle)) return()
+    hint=get_hint(game$puzzle,game$h_player,game$v_player)
+    if(is.null(hint)){
+      showModal(modalDialog(title="Aucun indice","Votre solution est déjà complète !",easyClose=TRUE))
+      return()
+    }
+    if(hint$action=="add"){
+      if(hint$type=="h") game$h_player[hint$i,hint$j]=1
+      else game$v_player[hint$i,hint$j]=1
+    }else{
+      if(hint$type=="h") game$h_player[hint$i,hint$j]=0
+      else game$v_player[hint$i,hint$j]=0
+    }
+    # On vérifie si l'indice a permis de terminer le puzzle
+    if(check_victory(game$puzzle,game$h_player,game$v_player)){
+      showModal(modalDialog(title="Bravo !","Vous avez résolu le puzzle !",easyClose=TRUE))
+    }
+  })
   
   # ==========================================
   # GESTION DES CLICS SUR LA GRILLE
@@ -99,6 +124,10 @@ server=function(input,output,session){
       # permet de basculer de 0 à 1 (tracer) ou de 1 à 0 (effacer) après un clic suffisamment proche
       if(best_type=="h") game$h_player[best_i,best_j]=1-game$h_player[best_i,best_j]
       else game$v_player[best_i,best_j]=1-game$v_player[best_i,best_j]
+      # Après chaque clic on vérifie si le joueur a termine le puzzle
+      if(check_victory(game$puzzle,game$h_player,game$v_player)){
+        showModal(modalDialog(title="Bravo !","Vous avez résolu le puzzle !",easyClose=TRUE))
+      }
     }
   })
   
