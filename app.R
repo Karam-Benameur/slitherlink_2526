@@ -1,8 +1,8 @@
 library(shiny)
 library(Rcpp)
-# On importe notre script annexe qui contient la logique de création de la grille
-source("R/generate.R")
-source("R/utils.R")
+library(colourpicker) # Ajout de la bibliothèque pour personnaliser les couleurs de la grille
+source("R/generate.R") # On importe notre script annexe qui contient la logique de création de la grille
+source("R/utils.R") # On importe le script annexe qui s'occupe de la logique de création des indices
 
 # ==========================================
 # ui : la fonction qui gère l'interface utilisateur
@@ -17,6 +17,15 @@ ui=fluidPage(
                  actionButton("new_game","Nouvelle Partie",style="width:100%; font-weight:bold;"),
                  hr(),
                  actionButton("hint_btn","Indice",style="width:100%;"),
+                 hr(),
+                 h4("Chronomètre"),
+                 textOutput("timer_display"),
+                 tags$style("#timer_display {font-size:24px;font-weight:bold;text-align:center;}"),
+                 hr(),
+                 h4("Personnalisation"),
+                 colourInput("col_lines","Couleur des traits",value="#0000FF"),
+                 colourInput("col_numbers","Couleur des chiffres",value="#000000"),
+                 colourInput("col_bg","Couleur du fond",value="#FFFFFF"),
                  hr(),
                  helpText("Cliquez sur les arêtes entre les points pour tracer la boucle.")
     ),
@@ -34,7 +43,8 @@ ui=fluidPage(
 server=function(input,output,session){
   
   # game est notre "mémoire", toute modification d'une variable ici forcera l'UI à se mettre à jour
-  game=reactiveValues(puzzle=NULL,rows=5,cols=5,h_player=NULL,v_player=NULL)
+  game=reactiveValues(puzzle=NULL,rows=5,cols=5,h_player=NULL,v_player=NULL,
+                      start_time=NULL,game_won=FALSE)
   
   # Fonction pour initialiser une nouvelle grille vierge
   start_game=function(difficulty="facile"){
@@ -50,6 +60,8 @@ server=function(input,output,session){
     game$h_player=matrix(0,nrow=dims[1]+1,ncol=dims[2])
     # v_player gère les lignes verticales (il y a une colonne de plus que de cases)
     game$v_player=matrix(0,nrow=dims[1],ncol=dims[2]+1)
+    game$start_time=Sys.time() # Démarrage/redémarrage du chronomètre au lancement d'une nouvelle partie
+    game$game_won=FALSE
   }
   
   # Au lancement de l'app, on force la création d'une partie facile par défaut
@@ -58,10 +70,23 @@ server=function(input,output,session){
   # Si l'utilisateur clique sur le bouton "Nouvelle partie", on relance start_game()
   observeEvent(input$new_game,{start_game(input$difficulty)})
   
+  output$timer_display=renderText({
+    invalidateLater(1000,session)
+    if(is.null(game$start_time)||game$game_won){
+      if(game$game_won) elapsed=as.numeric(difftime(game$end_time,game$start_time,units="secs"))
+      else return("00:00")
+    }else{
+      elapsed=as.numeric(difftime(Sys.time(),game$start_time,units="secs"))
+    }
+    mins=floor(elapsed/60)
+    secs=floor(elapsed%%60)
+    sprintf("%02d:%02d",mins,secs)
+  })
+  
   # Gestion du bouton indice
   # On cherche une arête incorrecte ou manquante et on la corrige pour aider le joueur
   observeEvent(input$hint_btn,{
-    if(is.null(game$puzzle)) return()
+    if(is.null(game$puzzle)||game$game_won) return()
     hint=get_hint(game$puzzle,game$h_player,game$v_player)
     if(is.null(hint)){
       showModal(modalDialog(title="Aucun indice","Votre solution est déjà complète !",easyClose=TRUE))
@@ -76,6 +101,8 @@ server=function(input,output,session){
     }
     # On vérifie si l'indice a permis de terminer le puzzle
     if(check_victory(game$puzzle,game$h_player,game$v_player)){
+      game$game_won=TRUE
+      game$end_time=Sys.time()
       showModal(modalDialog(title="Bravo !","Vous avez résolu le puzzle !",easyClose=TRUE))
     }
   })
@@ -84,7 +111,7 @@ server=function(input,output,session){
   # GESTION DES CLICS SUR LA GRILLE
   # ==========================================
   observeEvent(input$grid_click,{
-    if(is.null(game$puzzle)) return()
+    if(is.null(game$puzzle)||game$game_won) return()
     
     # Récupération des coordonnées exactes du clic de souris
     click_x=input$grid_click$x
@@ -124,32 +151,33 @@ server=function(input,output,session){
       # permet de basculer de 0 à 1 (tracer) ou de 1 à 0 (effacer) après un clic suffisamment proche
       if(best_type=="h") game$h_player[best_i,best_j]=1-game$h_player[best_i,best_j]
       else game$v_player[best_i,best_j]=1-game$v_player[best_i,best_j]
-      # Après chaque clic on vérifie si le joueur a termine le puzzle
+      # Après chaque clic on vérifie si le joueur a terminé le puzzle
       if(check_victory(game$puzzle,game$h_player,game$v_player)){
+        game$game_won=TRUE
+        game$end_time=Sys.time()
         showModal(modalDialog(title="Bravo !","Vous avez résolu le puzzle !",easyClose=TRUE))
       }
     }
   })
   
   # ==========================================
-  # DESSIN DE LA GRILLE 
+  # DESSIN DE LA GRILLE
   # ==========================================
   output$grid=renderPlot({
     if(is.null(game$puzzle)) return()
     rows=game$rows
     cols=game$cols
-    
     # Marges réduites
-    par(mar=c(1,1,1,1))
-    
-    # Initialisation de la toile vierge 
+    par(mar=c(1,1,1,1),bg=input$col_bg)
+    # Initialisation de la toile vierge
     plot(NULL,xlim=c(-0.5,cols+0.5),ylim=c(-0.5,rows+0.5),asp=1,xlab="",ylab="",axes=FALSE)
+    rect(-0.5,-0.5,cols+0.5,rows+0.5,col=input$col_bg,border=NA)
     
     # Dessin des traits horizontaux du joueur
     for(i in 1:(rows+1)){
       for(j in 1:cols){
         if(game$h_player[i,j]==1)
-          segments(j-1,rows-(i-1),j,rows-(i-1),lwd=3,col="blue")
+          segments(j-1,rows-(i-1),j,rows-(i-1),lwd=3,col=input$col_lines)
       }
     }
     
@@ -157,10 +185,10 @@ server=function(input,output,session){
     for(i in 1:rows){
       for(j in 1:(cols+1)){
         if(game$v_player[i,j]==1)
-          segments(j-1,rows-(i-1),j-1,rows-i,lwd=3,col="blue")
+          segments(j-1,rows-(i-1),j-1,rows-i,lwd=3,col=input$col_lines)
       }
     }
-    
+   
     # Dessin de tous les points noirs (la grille de base)
     for(i in 0:rows){
       for(j in 0:cols) points(j,rows-i,pch=19,cex=1.2,col="black")
@@ -171,7 +199,7 @@ server=function(input,output,session){
     for(i in 1:rows){
       for(j in 1:cols){
         if(!is.na(visible[i,j]))
-          text(j-0.5,rows-i+0.5,visible[i,j],cex=1.5,col="black",font=2)
+          text(j-0.5,rows-i+0.5,visible[i,j],cex=1.5,col=input$col_numbers,font=2)
       }
     }
   })
