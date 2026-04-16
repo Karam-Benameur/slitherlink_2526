@@ -1,9 +1,9 @@
 library(shiny)
 library(Rcpp)
 library(colourpicker) # Ajout d'une librairie
-# On importe notre script annexe qui contient la logique de création de la grille
-source("R/generate.R")
-source("R/utils.R")
+
+source("R/generate.R") # On importe notre script annexe qui contient la logique de création de la grille
+source("R/utils.R") # On importe le script annexe qui s'occupe de la logique de création des indices
 
 # Chemin vers le fichier CSV qui stocke les scores
 LEADERBOARD_FILE="leaderboard.csv"
