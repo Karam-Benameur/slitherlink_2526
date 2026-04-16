@@ -21,7 +21,7 @@ Slitherlink est un casse-tête où l'on doit tracer une boucle fermée unique su
 
 ## Structure du projet
 
-
+```text
 slitherlink2526/
 ├── app.R                        # Application Shiny principale
 ├── R/
@@ -32,7 +32,7 @@ slitherlink2526/
 ├── leaderboard.csv              # Sauvegarde des scores
 ├── .gitignore
 └── README.md
-
+```
 
 ## Prérequis
 
